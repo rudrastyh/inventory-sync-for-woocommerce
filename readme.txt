@@ -1,10 +1,10 @@
 === Inventory Sync for WooCommerce ===
 Contributors: rudrastyh
 Tags: woocommerce, woocommerce stock, shared stock, stock sync, stock management
-Requires at least: 3.1
+Requires at least: 5.8
 Tested up to: 6.9
-Stable tag: 2.0
-Requires PHP: 5.3
+Stable tag: 2.0.1
+Requires PHP: 7.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -69,6 +69,9 @@ However, if you'd like to sync all WooCommerce product information (product imag
 2. Stock status, Stock management and Quantity are the fields that will be synced.
 
 == Changelog ==
+
+= 2.0.1 =
+* Bug fixes
 
 = 2.0 =
 * Added: The free version now allows you to sync inventory between subsites within a WordPress Multisite network

@@ -4,7 +4,7 @@
  Description: Allows to synchronize the stock quantity of the products with the same SKUs between two WooCommerce stores.
  Author: Misha Rudrastyh
  Author URI: https://rudrastyh.com
- Version: 2.0
+ Version: 2.0.1
  License: GPL v2 or later
  License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -23,6 +23,17 @@
  along with this program; if not, write to the Free Software
  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
+
+require __DIR__ . '/includes/WooCommerce/Client.php';
+require __DIR__ . '/includes/WooCommerce/HttpClient/BasicAuth.php';
+require __DIR__ . '/includes/WooCommerce/HttpClient/HttpClient.php';
+require __DIR__ . '/includes/WooCommerce/HttpClient/HttpClientException.php';
+require __DIR__ . '/includes/WooCommerce/HttpClient/OAuth.php';
+require __DIR__ . '/includes/WooCommerce/HttpClient/Options.php';
+require __DIR__ . '/includes/WooCommerce/HttpClient/Request.php';
+require __DIR__ . '/includes/WooCommerce/HttpClient/Response.php';
+
+use Automattic\WooCommerce\Client;
 
 if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 
@@ -55,6 +66,8 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 			add_action( 'woocommerce_product_after_variable_attributes', array( $this, 'variation_settings' ), 10, 3 );
 			// tool
 			add_filter( 'woocommerce_debug_tools', array( $this, 'register_sync_tool' ) );
+			// notices
+			add_action( 'admin_notices', array( $this, 'notices' ) );
 
 		}
 
@@ -70,6 +83,26 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 		}
 
 
+		public static function api_init() {
+
+			$stores = self::get_stores();
+
+			if(
+				! empty( $stores )
+				&& ! empty( $stores[0][ 'url' ] )
+				&& ! empty( $stores[0][ 'login' ] )
+				&& ! empty( $stores[0][ 'pwd' ] )
+			) {
+				$woocommerce = new Client( $stores[0][ 'url' ], $stores[0][ 'login' ], $stores[0][ 'pwd' ], array( 'version' => 'wc/v3', 'timeout' => 30 ) );
+			} else {
+				$woocommerce = null;
+			}
+
+			return $woocommerce;
+
+		}
+
+
 		public function order_sync( $order ) {
 
 			$items = $order->get_items( array( 'line_item' ) );
@@ -77,9 +110,10 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 				return;
 			}
 
+			$woocommerce = $this->api_init();
 
-			$items = $this->format_order_items( $items );
-			$this->sync( $items );
+			$items = $this->format_order_items( $items, $woocommerce );
+			$this->sync( $items, $woocommerce );
 
 		}
 
@@ -121,8 +155,11 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 				return;
 			}
 
-			$items = self::format_product( $product );
-			self::sync( $items );
+			$woocommerce = self::api_init();
+
+			$items = self::format_product( $product, $woocommerce );
+//echo '<pre>';print_r($items);exit;
+			self::sync( $items, $woocommerce );
 
 		}
 
@@ -130,7 +167,7 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 		/*
 		 * Formatting functions
 		 */
-		private function format_order_items( $items ) {
+		private function format_order_items( $items, $woocommerce ) {
 
 			/*
 				Array(
@@ -157,10 +194,10 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 
 				if( $parent_id = $product->get_parent_id() ) {
 					// variation
-					$return[ 'variations' ][ $parent_id ][] = $this->product_data( $product );
+					$return[ 'variations' ][ $parent_id ][] = $this->product_data( $product, $woocommerce );
 				} else {
 					// not variation
-					$return[ 'products' ][] = $this->product_data( $product );
+					$return[ 'products' ][] = $this->product_data( $product, $woocommerce );
 				}
 
 			}
@@ -170,7 +207,7 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 		}
 
 
-		public static function format_product( $product ) {
+		public static function format_product( $product, $woocommerce ) {
 
 			$return = array(
 				'products' => array(),
@@ -181,19 +218,19 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 			if( $product->is_type( 'variable' ) ) {
 
 				if( $variation_ids = $product->get_children() ) {
-					$parent_id = $product->get_id();
+					$parent_id = self::get_id_by_sku( $product->get_sku(), $woocommerce );
 					foreach( $variation_ids as $variation_id ) {
 						$variation = wc_get_product_object( 'variation', $variation_id );
 						if( ! $variation ) {
 							continue;
 						}
-						$return[ 'variations' ][ $parent_id ][] = self::product_data( $variation );
+						$return[ 'variations' ][ $parent_id ][] = self::product_data( $variation, $woocommerce );
 					}
 				}
 
 			} else {
 
-				$return[ 'products' ][] = self::product_data( $product );
+				$return[ 'products' ][] = self::product_data( $product, $woocommerce );
 
 			}
 
@@ -202,11 +239,11 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 		}
 
 
-		public static function product_data( $product ) {
+		public static function product_data( $product, $woocommerce ) {
 			$sku = get_post_meta( $product->get_id(), '_sku', true );
 
 			return array(
-				'id' => self::get_id_by_sku( $sku ),
+				'id' => self::get_id_by_sku( $sku, $woocommerce ),
 				'sku' => $sku,
 				'manage_stock' => $product->get_manage_stock(),
 				'stock_status' => $product->get_stock_status(),
@@ -214,42 +251,27 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 			);
 		}
 
-		public static function get_id_by_sku( $sku ) {
-
-			$url = esc_url( get_option( 'isfw_store_url' ) );
-			$login = get_option( 'isfw_username' );
-			$pwd = get_option( 'isfw_application_password' );
+		public static function get_id_by_sku( $sku, $woocommerce ) {
 
 			// is not enough info or multisite
-			if( ! $url || ! $login || ! $pwd ) {
+			if( ! $woocommerce ) {
 				return 0;
 			}
 
-			$request = wp_remote_get(
-				add_query_arg(
-					array(
-						'sku' => $sku
-					),
-					"{$url}/wp-json/wc/v3/products"
-				),
-				array(
-					'headers' => array(
-						'Authorization' => 'Basic ' . base64_encode( "{$login}:{$pwd}" )
-					)
-				)
-			);
-
-			if( 'OK' !== wp_remote_retrieve_response_message( $request ) ) {
+			try {
+				$products = $woocommerce->get( 'products', array(
+					'sku' => $sku,
+				) );
+			} catch ( Exception $e ) {
+				//echo $e->getMessage();exit;
 				return 0;
 			}
 
-			$products = json_decode( wp_remote_retrieve_body( $request ) );
-			if( ! $products ) {
+			if( empty( $products ) || empty( $products[0]->id ) ) {
 				return 0;
 			}
 
-			$p = reset( $products );
-			return $p->id;
+			return $products[0]->id;
 
 		}
 
@@ -257,7 +279,7 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 		/*
 		 * Sync functions
 		 */
-		public static function sync( $items ) {
+		public static function sync( $items, $woocommerce ) {
 
 			$stores = self::get_stores();
 			if( empty( $stores ) ) {
@@ -318,34 +340,24 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 					// let's check how many elements are in array
 					if( count( $items[ 'products' ] ) > 1 ) {
 						// create and run batch here
-						wp_remote_request(
-							"{$url}/wp-json/wc/v3/products/batch",
-							array(
-								'method' => 'POST',
-								'headers' => array(
-									'Authorization' => 'Basic ' . base64_encode( "$login:$pwd" )
-								),
-								'body' => array(
-									'update' => $items[ 'products' ]
-								)
-							)
-						);
+						try {
+							$woocommerce->post( 'products/batch', array(
+								'update' => $items[ 'products' ],
+							) );
+						} catch ( Exception $e ) {
+							// TODO logger
+						}
 					} else {
 
 						// great now we have a product and we have to update its stock!
 						$product_id = $items[ 'products' ][0][ 'id' ];
 						unset( $items[ 'products' ][0][ 'id' ] );
 
-						wp_remote_request(
-							"{$url}/wp-json/wc/v3/products/{$product_id}",
-							array(
-								'method' => 'PUT',
-								'headers' => array(
-									'Authorization' => 'Basic ' . base64_encode( "$login:$pwd" )
-								),
-								'body' => $items[ 'products' ][0]
-							)
-						);
+						try {
+							$woocommerce->put( "products/{$product_id}", $items[ 'products' ][0] );
+						} catch ( Exception $e ) {
+							// TODO logger
+						}
 
 					}
 
@@ -359,18 +371,16 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 
 						if( count( $variations ) > 1 ) {
 
-							wp_remote_request(
-								"{$url}/wp-json/wc/v3/products/{$parent_id}/variations/batch",
-								array(
-									'method' => 'POST',
-									'headers' => array(
-										'Authorization' => 'Basic ' . base64_encode( "$login:$pwd" )
-									),
-									'body' => array(
-										'update' => $variations
+							try {
+								$woocommerce->post(
+									"products/{$parent_id}/variations/batch",
+									array(
+										'update' => $variations,
 									)
-								)
-							);
+								);
+							} catch (Exception $e) {
+								// TODO logger
+							}
 
 						} else {
 
@@ -378,16 +388,11 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 							$variation_id = $variations[0][ 'id' ];
 							unset( $variations[0][ 'id' ] );
 
-							wp_remote_request(
-								"{$url}/wp-json/wc/v3/products/{$parent_id}/variations/{$variation_id}",
-								array(
-									'method' => 'POST',
-									'headers' => array(
-										'Authorization' => 'Basic ' . base64_encode( "$login:$pwd" )
-									),
-									'body' => $variations[0]
-								)
-							);
+							try {
+								$woocommerce->put( "products/{$parent_id}/variations/{$variation_id}", $variations[0] );
+							} catch (Exception $e) {
+								// TODO logger
+							}
 
 						}
 
@@ -420,11 +425,13 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 
 			if( empty( $stores ) ) {
 				$url = esc_url( get_option( 'isfw_store_url' ) );
+				$name = get_option( 'isfw_store_name', '–' );
 				$login = get_option( 'isfw_username' );
 				$pwd = get_option( 'isfw_application_password' );
 				if( $url && $login && $pwd ) {
 					$stores[] = array(
 						'blog_id' => 0,
+						'name' => $name,
 						'url' => $url,
 						'login' => $login,
 						'pwd' => $pwd,
@@ -764,6 +771,7 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 			$added_store = array(
 				'blog_id' => 0,
 				'url' => $url,
+				'name' => '–',
 				'login' => $login,
 				'pwd' => $pwd,
 			);
@@ -776,6 +784,14 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 					'https://rudrastyh.com/support/site-is-not-added'
 				)
 			);
+
+			$woocommerce = new Client( $url, $login, $pwd, array( 'version' => 'wc/v3', 'timeout' => 30 ) );
+			// let's check WooCommerce connection first
+			try {
+				$woocommerce->get( 'system_status' );
+			} catch( Exception $error ) {
+				wp_send_json_error( $not_added_err );
+			}
 
 			// let's just get a store name
 			$request2 = wp_remote_get(
@@ -795,7 +811,10 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 				wp_send_json_error( $not_added_err );
 			}
 
-			$added_store[ 'name' ] = $body->name;
+			if( ! empty( $body->name ) ) {
+				$added_store[ 'name' ] = $body->name;
+				update_option( 'isfw_store_name', $body->name );
+			}
 
 			update_option( 'isfw_store_url', $url );
 			update_option( 'isfw_username', $login );
@@ -904,6 +923,42 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 				}
 			}
 			wp_send_json_success( $results );
+
+		}
+
+		public function notices() {
+
+			$screen = get_current_screen();
+
+			if( 'plugins' !== $screen->id && 'edit-product' !== $screen->id ) {
+				return;
+			}
+
+			$ck = get_option( 'isfw_username', '' );
+			$cs = get_option( 'isfw_application_password', '' );
+
+			if( ! $ck || ! $cs ) {
+				return;
+			}
+
+			if( 0 === strpos( $ck, 'ck_' ) && 0 === strpos( $cs, 'cs_' ) ) {
+				// all good
+				return;
+			}
+
+			?><div class="notice notice-warning"><p><?php
+				printf(
+					__( 'Please reconnect your store using WooCommerce REST API credentials (Consumer Key and Secret) <a href="%s">in the plugin settings</a>. Otherwise your inventory may not be synced correctly.', 'rudr-simple-inventory-sync' ),
+					add_query_arg(
+						array(
+							'page' => 'wc-settings',
+							'tab' => 'products',
+							'section' => 'inventory',
+						),
+						'admin.php#inventory-sync'
+					)
+				);
+			?></p></div><?php
 
 		}
 
