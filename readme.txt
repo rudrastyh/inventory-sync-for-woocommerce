@@ -65,7 +65,7 @@ However, if you'd like to sync all WooCommerce product information (product imag
 - [Product Sync](https://rudrastyh.com/woocommerce/product-sync-with-multiple-stores.html) for standalone WooCommerce stores
 
 == Screenshots ==
-1. Inventory sync happens automatically and plugin doesn't even have any settings except the REST API authentication data of a site you are about to sync stock info with.
+1. Inventory sync happens automatically; you just need to provide the REST API authentication data for standalone stores (or simply select a sub-store for WordPress Multisite). In the plugin settings, you can also choose the connection type and sync method (instant or in the background).
 2. Stock status, Stock management and Quantity are the fields that will be synced.
 
 == Changelog ==
