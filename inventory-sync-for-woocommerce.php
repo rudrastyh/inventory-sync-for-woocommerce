@@ -4,7 +4,7 @@
  Description: Allows to synchronize the stock quantity of the products with the same SKUs between two WooCommerce stores.
  Author: Misha Rudrastyh
  Author URI: https://rudrastyh.com
- Version: 2.0.1
+ Version: 2.0.2
  License: GPL v2 or later
  License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -24,14 +24,16 @@
  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
-require __DIR__ . '/includes/WooCommerce/Client.php';
-require __DIR__ . '/includes/WooCommerce/HttpClient/BasicAuth.php';
-require __DIR__ . '/includes/WooCommerce/HttpClient/HttpClient.php';
-require __DIR__ . '/includes/WooCommerce/HttpClient/HttpClientException.php';
-require __DIR__ . '/includes/WooCommerce/HttpClient/OAuth.php';
-require __DIR__ . '/includes/WooCommerce/HttpClient/Options.php';
-require __DIR__ . '/includes/WooCommerce/HttpClient/Request.php';
-require __DIR__ . '/includes/WooCommerce/HttpClient/Response.php';
+if ( ! class_exists( 'Automattic\WooCommerce\Client' ) ) {
+	require_once __DIR__ . '/includes/WooCommerce/Client.php';
+	require_once __DIR__ . '/includes/WooCommerce/HttpClient/BasicAuth.php';
+	require_once __DIR__ . '/includes/WooCommerce/HttpClient/HttpClient.php';
+	require_once __DIR__ . '/includes/WooCommerce/HttpClient/HttpClientException.php';
+	require_once __DIR__ . '/includes/WooCommerce/HttpClient/OAuth.php';
+	require_once __DIR__ . '/includes/WooCommerce/HttpClient/Options.php';
+	require_once __DIR__ . '/includes/WooCommerce/HttpClient/Request.php';
+	require_once __DIR__ . '/includes/WooCommerce/HttpClient/Response.php';
+}
 
 use Automattic\WooCommerce\Client;
 
@@ -502,13 +504,23 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 				<table class="form-table">
 					<tbody>
 						<tr>
+							<th scope="row"><label for="sync_type"><?php esc_html_e( 'Sync method', 'rudr-simple-inventory-sync' ) ?></label></th>
+							<td>
+								<select id="sync_type" name="sync_type" class="wc-enhanced-select">
+									<option value="instant"><?php esc_html_e( 'Instant', 'rudr-simple-inventory-sync' ) ?></option>
+									<option value="async" disabled><?php esc_html_e( 'Asynchronous', 'rudr-simple-inventory-sync' ) ?></option>	
+								</select>
+								<p class="description">(<a href="https://rudrastyh.com/plugins/simple-product-stock-sync-for-woocommerce">Pro</a>) <?php esc_html_e( 'By default, product stock is synced instantly, which may increase checkout processing time for large orders, so you may want to perform the sync in the background.', 'rudr-simple-inventory-sync' ) ?></p>
+							</td>
+						</tr>
+						<tr>
 							<th scope="row"><label for="connection_type"><?php esc_html_e( 'Product connection type', 'rudr-simple-inventory-sync' ) ?></label></th>
 							<td>
 								<select id="connection_type" name="connection_type" class="wc-enhanced-select">
 									<option value="sku"><?php esc_html_e( 'SKU', 'woocommerce' ) ?></option>
-									<option value="slug" disabled><?php esc_html_e( 'Slug (Pro)', 'rudr-simple-inventory-sync' ) ?></option>
+									<option value="slug" disabled><?php esc_html_e( 'Slug', 'rudr-simple-inventory-sync' ) ?></option>
 								</select>
-								<p class="description"><?php esc_html_e( 'The entity that will be used to find similar products across connected stores.', 'rudr-simple-inventory-sync' ) ?></p>
+								<p class="description">(<a href="https://rudrastyh.com/plugins/simple-product-stock-sync-for-woocommerce">Pro</a>) <?php esc_html_e( 'The entity that will be used to find similar products across connected stores.', 'rudr-simple-inventory-sync' ) ?></p>
 							</td>
 						</tr>
 						<?php
@@ -605,7 +617,7 @@ if( ! class_exists( 'ISFW_Product_Sync' ) ) {
 		// quick settings link
 		public function settings_link( $links, $plugin_file_name ){
 
-			if( strpos( $plugin_file_name, basename(__FILE__) ) ) {
+			if( str_ends_with( $plugin_file_name, '/' . basename(__FILE__) ) ) {
 				array_unshift(
 					$links,
 					sprintf(
